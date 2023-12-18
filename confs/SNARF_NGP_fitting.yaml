@@ -20,6 +20,10 @@ model:
       enable: true
       is_refine: false
       lr: 1e-4
+    optimize_HMR2:
+      enable: true
+      is_refine: false
+      lr: 1e-5
     loss:
       _target_: instant_avatar.utils.loss.NGPLoss
       opt:
@@ -37,7 +41,7 @@ model:
 
 project: "SNARF_NGP"
 experiment: "fitting"
-seed: 42
+seed: 99
 resume: true
 train:
   precision: 32

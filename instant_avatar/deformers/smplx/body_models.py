@@ -25,12 +25,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .lbs import (lbs, blend_shapes)
+from .lbs import lbs, blend_shapes
 
 from .vertex_ids import vertex_ids as VERTEX_IDS
-from .utils import (
-    Struct, to_np, to_tensor, Tensor, Array,
-    SMPLOutput)
+from .utils import Struct, to_np, to_tensor, Tensor, Array, SMPLOutput
 from .vertex_joint_selector import VertexJointSelector
 
 
@@ -120,19 +118,15 @@ class SMPL(nn.Module):
                 smpl_path = os.path.join(model_path, model_fn)
             else:
                 smpl_path = model_path
-            assert osp.exists(smpl_path), 'Path {} does not exist!'.format(
-                smpl_path)
-
+            assert osp.exists(smpl_path), 'Path {} does not exist!'.format(smpl_path)
             with open(smpl_path, 'rb') as smpl_file:
-                data_struct = Struct(**pickle.load(smpl_file,
-                                                   encoding='latin1'))
+                data_struct = Struct(**pickle.load(smpl_file, encoding='latin1'))
 
         super(SMPL, self).__init__()
         self.batch_size = batch_size
         shapedirs = data_struct.shapedirs
         if (shapedirs.shape[-1] < self.SHAPE_SPACE_DIM):
-            print(f'WARNING: You are using a {self.name()} model, with only'
-                  ' 10 shape coefficients.')
+            print(f'WARNING: You are using a {self.name()} model, with only 10 shape coefficients.')
             num_betas = min(num_betas, 10)
         else:
             num_betas = min(num_betas, self.SHAPE_SPACE_DIM)
@@ -140,9 +134,7 @@ class SMPL(nn.Module):
         self._num_betas = num_betas
         shapedirs = shapedirs[:, :, :num_betas]
         # The shape components
-        self.register_buffer(
-            'shapedirs',
-            to_tensor(to_np(shapedirs), dtype=dtype))
+        self.register_buffer('shapedirs', to_tensor(to_np(shapedirs), dtype=dtype))
 
         if vertex_ids is None:
             # SMPL and SMPL-H share the same topology, so any extra joints can
@@ -153,68 +145,53 @@ class SMPL(nn.Module):
 
         self.joint_mapper = joint_mapper
 
-        self.vertex_joint_selector = VertexJointSelector(
-            vertex_ids=vertex_ids, **kwargs)
+        self.vertex_joint_selector = VertexJointSelector(vertex_ids=vertex_ids, **kwargs)
 
         self.faces = data_struct.f
-        self.register_buffer('faces_tensor',
-                             to_tensor(to_np(self.faces, dtype=np.int64),
-                                       dtype=torch.long))
+        self.register_buffer('faces_tensor', to_tensor(to_np(self.faces, dtype=np.int64), dtype=torch.long))
 
         if create_betas:
             if betas is None:
-                default_betas = torch.zeros(
-                    [batch_size, self.num_betas], dtype=dtype)
+                default_betas = torch.zeros([batch_size, self.num_betas], dtype=dtype)
             else:
                 if torch.is_tensor(betas):
                     default_betas = betas.clone().detach()
                 else:
                     default_betas = torch.tensor(betas, dtype=dtype)
 
-            self.register_parameter(
-                'betas', nn.Parameter(default_betas, requires_grad=True))
+            self.register_parameter('betas', nn.Parameter(default_betas, requires_grad=True))
 
         # The tensor that contains the global rotation of the model
         # It is separated from the pose of the joints in case we wish to
         # optimize only over one of them
         if create_global_orient:
             if global_orient is None:
-                default_global_orient = torch.zeros(
-                    [batch_size, 3], dtype=dtype)
+                default_global_orient = torch.zeros([batch_size, 3], dtype=dtype)
             else:
                 if torch.is_tensor(global_orient):
                     default_global_orient = global_orient.clone().detach()
                 else:
-                    default_global_orient = torch.tensor(
-                        global_orient, dtype=dtype)
+                    default_global_orient = torch.tensor(global_orient, dtype=dtype)
 
-            global_orient = nn.Parameter(default_global_orient,
-                                         requires_grad=True)
+            global_orient = nn.Parameter(default_global_orient, requires_grad=True)
             self.register_parameter('global_orient', global_orient)
 
         if create_body_pose:
             if body_pose is None:
-                default_body_pose = torch.zeros(
-                    [batch_size, self.NUM_BODY_JOINTS * 3], dtype=dtype)
+                default_body_pose = torch.zeros([batch_size, self.NUM_BODY_JOINTS * 3], dtype=dtype)
             else:
                 if torch.is_tensor(body_pose):
                     default_body_pose = body_pose.clone().detach()
                 else:
-                    default_body_pose = torch.tensor(body_pose,
-                                                     dtype=dtype)
-            self.register_parameter(
-                'body_pose',
-                nn.Parameter(default_body_pose, requires_grad=True))
+                    default_body_pose = torch.tensor(body_pose, dtype=dtype)
+            self.register_parameter('body_pose', nn.Parameter(default_body_pose, requires_grad=True))
 
         if create_transl:
             if transl is None:
-                default_transl = torch.zeros([batch_size, 3],
-                                             dtype=dtype,
-                                             requires_grad=True)
+                default_transl = torch.zeros([batch_size, 3], dtype=dtype, requires_grad=True)
             else:
                 default_transl = torch.tensor(transl, dtype=dtype)
-            self.register_parameter(
-                'transl', nn.Parameter(default_transl, requires_grad=True))
+            self.register_parameter('transl', nn.Parameter(default_transl, requires_grad=True))
 
         if v_template is None:
             v_template = data_struct.v_template
@@ -223,16 +200,14 @@ class SMPL(nn.Module):
         # The vertices of the template model
         self.register_buffer('v_template', v_template)
 
-        j_regressor = to_tensor(to_np(
-            data_struct.J_regressor), dtype=dtype)
-        self.register_buffer('J_regressor', j_regressor)
+        J_regressor = to_tensor(to_np(data_struct.J_regressor), dtype=dtype)
+        self.register_buffer('J_regressor', J_regressor)
 
         # Pose blend shape basis: 6890 x 3 x 207, reshaped to 6890*3 x 207
         num_pose_basis = data_struct.posedirs.shape[-1]
         # 207 x 20670
         posedirs = np.reshape(data_struct.posedirs, [-1, num_pose_basis]).T
-        self.register_buffer('posedirs',
-                             to_tensor(to_np(posedirs), dtype=dtype))
+        self.register_buffer('posedirs', to_tensor(to_np(posedirs), dtype=dtype))
 
         # indices of parents for each joints
         parents = to_tensor(to_np(data_struct.kintree_table[0])).long()
@@ -301,26 +276,30 @@ class SMPL(nn.Module):
 
             Parameters
             ----------
-            global_orient: torch.tensor, optional, shape Bx3
+            global_orient: torch.tensor, optional, shape B x 3
                 If given, ignore the member variable and use it as the global
-                rotation of the body. Useful if someone wishes to predicts this
+                rotation of the body. Useful if someone wishes to predict this
                 with an external model. (default=None)
-            betas: torch.tensor, optional, shape BxN_b
+
+            betas: torch.tensor, optional, shape B x N_b
                 If given, ignore the member variable `betas` and use it
                 instead. For example, it can used if shape parameters
                 `betas` are predicted from some external model.
                 (default=None)
-            body_pose: torch.tensor, optional, shape Bx(J*3)
+            
+            body_pose: torch.tensor, optional, shape B x (J*3)
                 If given, ignore the member variable `body_pose` and use it
                 instead. For example, it can used if someone predicts the
                 pose of the body joints are predicted from some external model.
                 It should be a tensor that contains joint rotations in
                 axis-angle format. (default=None)
-            transl: torch.tensor, optional, shape Bx3
+            
+            transl: torch.tensor, optional, shape B x 3
                 If given, ignore the member variable `transl` and use it
                 instead. For example, it can used if the translation
                 `transl` is predicted from some external model.
                 (default=None)
+
             return_verts: bool, optional
                 Return the vertices. (default=True)
             return_full_pose: bool, optional
@@ -329,8 +308,7 @@ class SMPL(nn.Module):
             Returns
             -------
         '''
-        # If no shape and pose parameters are passed along, then use the
-        # ones from the module
+        # If no shape and pose parameters are passed along, then use the ones from the module
         batch_size = max([v.shape[0] if v is not None else 0 for v in [betas, body_pose, global_orient, transl]])
         global_orient = global_orient if global_orient is not None else self.global_orient.expand(batch_size, -1)
         body_pose = body_pose if body_pose is not None else self.body_pose.expand(batch_size, -1)
@@ -341,9 +319,11 @@ class SMPL(nn.Module):
             transl = self.transl
 
         full_pose = torch.cat([global_orient, body_pose], dim=1)
+
         vertices, joints, A, T, shape_offsets, pose_offsets = lbs(
             betas, full_pose, self.v_template, self.shapedirs, self.posedirs,
-            self.J_regressor, self.parents, self.lbs_weights, pose2rot=pose2rot)
+            self.J_regressor, self.parents, self.lbs_weights, pose2rot=pose2rot
+        )
 
         joints = self.vertex_joint_selector(vertices, joints)
         # Map the joints to the current dataset
@@ -359,14 +339,17 @@ class SMPL(nn.Module):
             T = T.clone()
             T[..., :3, 3] += transl.unsqueeze(dim=1)
 
-        output = SMPLOutput(vertices=vertices if return_verts else None,
-                            global_orient=global_orient,
-                            body_pose=body_pose,
-                            joints=joints,
-                            betas=betas,
-                            full_pose=full_pose if return_full_pose else None,
-                            A=A,
-                            T=T,
-                            shape_offsets=shape_offsets,
-                            pose_offsets=pose_offsets)
+        output = SMPLOutput(
+            vertices=vertices if return_verts else None,
+            global_orient=global_orient,
+            body_pose=body_pose,
+            joints=joints,
+            betas=betas,
+            full_pose=full_pose if return_full_pose else None,
+            A=A,
+            T=T,
+            shape_offsets=shape_offsets,
+            pose_offsets=pose_offsets
+        )
+
         return output

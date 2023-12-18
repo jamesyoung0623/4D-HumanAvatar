@@ -59,13 +59,9 @@ class DensityGrid(torch.nn.Module):
                 self.mesh_f_cano = deformer.body_model.faces_tensor
                 self.mesh_face_vertices = index_vertices_by_faces(self.mesh_v_cano, self.mesh_f_cano)
 
-                distance = kaolin.metrics.trianglemesh.point_to_mesh_distance(
-                    coords.reshape(1, -1, 3).contiguous(), self.mesh_face_vertices
-                )[0].reshape(coords.shape[:-1]).sqrt()
+                distance = kaolin.metrics.trianglemesh.point_to_mesh_distance(coords.reshape(1, -1, 3).contiguous(), self.mesh_face_vertices)[0].reshape(coords.shape[:-1]).sqrt()
 
-                sign = kaolin.ops.mesh.check_sign(
-                    self.mesh_v_cano, self.mesh_f_cano, coords.reshape(1, -1, 3)
-                ).reshape(coords.shape[:-1]).float()
+                sign = kaolin.ops.mesh.check_sign(self.mesh_v_cano, self.mesh_f_cano, coords.reshape(1, -1, 3)).reshape(coords.shape[:-1]).float()
                 sign = 1 - 2 * sign
                 signed_distance = sign * distance
                 self.density_field = (signed_distance < 0.01)

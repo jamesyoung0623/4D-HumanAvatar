@@ -7,16 +7,21 @@ import numpy as np
 import os
 
 cuda_dir = os.path.join(os.path.dirname(__file__), "cuda")
-fuse_kernel = load(name='fuse_cuda',
-                   extra_cuda_cflags=[],
-                   sources=[f'{cuda_dir}/fuse_kernel/fuse_cuda.cpp',
-                            f'{cuda_dir}/fuse_kernel/fuse_cuda_kernel_fast.cu'])
-filter_cuda = load(name='filter',
-                   sources=[f'{cuda_dir}/filter/filter.cpp',
-                            f'{cuda_dir}/filter/filter.cu'])
-precompute_cuda = load(name='precompute',
-                       sources=[f'{cuda_dir}/precompute/precompute.cpp',
-                                f'{cuda_dir}/precompute/precompute.cu'])
+fuse_kernel = load(
+    name='fuse_cuda',
+    extra_cuda_cflags=[],
+    sources=[f'{cuda_dir}/fuse_kernel/fuse_cuda.cpp', f'{cuda_dir}/fuse_kernel/fuse_cuda_kernel_fast.cu']
+)
+
+filter_cuda = load(
+    name='filter',
+    sources=[f'{cuda_dir}/filter/filter.cpp', f'{cuda_dir}/filter/filter.cu']
+)
+
+precompute_cuda = load(
+    name='precompute',
+    sources=[f'{cuda_dir}/precompute/precompute.cpp', f'{cuda_dir}/precompute/precompute.cu']
+)
 
 
 class ForwardDeformer(torch.nn.Module):
@@ -104,11 +109,16 @@ class ForwardDeformer(torch.nn.Module):
         xc_init_IN = torch.zeros((b, n, n_init, 3), device=xd_tgt.device, dtype=torch.float32)
         J_inv_init_IN = torch.zeros((b, n, n_init, 3, 3), device=xd_tgt.device, dtype=torch.float32)
         is_valid = torch.zeros((b, n, n_init), device=xd_tgt.device, dtype=torch.bool)
-        fuse_kernel.fuse_broyden(xc_init_IN, xd_tgt, voxel, voxel_J_inv, tfs,
-                                 self.init_bones_cuda, True, J_inv_init_IN,
-                                 is_valid, self.offset_kernel,
-                                 self.scale_kernel, cvg_thresh, dvg_thresh)
+        
+        fuse_kernel.fuse_broyden(
+            xc_init_IN, xd_tgt, voxel, voxel_J_inv, tfs,
+            self.init_bones_cuda, True, J_inv_init_IN,
+            is_valid, self.offset_kernel,
+            self.scale_kernel, cvg_thresh, dvg_thresh
+        )
+        
         mask = filter_cuda.filter(xc_init_IN, is_valid)
+        
         return {
             "result": xc_init_IN,
             'valid_ids': mask,
@@ -177,10 +187,12 @@ class ForwardDeformer(torch.nn.Module):
         grid_denorm = self.denormalize(grid)
 
         if use_smpl:
-            weights = query_weights_smpl(grid_denorm,
-                                         smpl_verts=smpl_verts.detach().clone(),
-                                         smpl_weights=smpl_weights.detach().clone(),
-                                         resolution=resolution).detach().clone()
+            weights = query_weights_smpl(
+                grid_denorm,
+                smpl_verts=smpl_verts.detach().clone(),
+                smpl_weights=smpl_weights.detach().clone(),
+                resolution=resolution
+            ).detach().clone()
         else:
             weights = self.query_weights(grid_denorm, {}, None)
 
@@ -191,14 +203,17 @@ class ForwardDeformer(torch.nn.Module):
             shape = xc.shape
             N = 1
             xc = xc.view(1, -1, 3)
-            w = F.grid_sample(self.lbs_voxel_final.expand(N, -1, -1, -1, -1),
-                              self.normalize(xc)[:, :, None, None],
-                              align_corners=True,
-                              mode=mode,
-                              padding_mode='border')
+            w = F.grid_sample(
+                self.lbs_voxel_final.expand(N, -1, -1, -1, -1),
+                self.normalize(xc)[:, :, None, None],
+                align_corners=True,
+                mode=mode,
+                padding_mode='border'
+            )
             w = w.squeeze(-1).squeeze(-1).permute(0, 2, 1)
             w = w.view(*shape[:-1], -1)
             return w
+        
         self.query_weights = query_weights
 
 def skinning_mask(x, w, tfs, inverse=False):

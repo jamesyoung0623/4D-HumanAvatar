@@ -7,8 +7,11 @@ from omegaconf import OmegaConf
 import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_fwd
-from torchmetrics import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
+from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+
+from hmr2.configs import CACHE_DIR_4DHUMANS
+from hmr2.models import download_models, load_hmr2, DEFAULT_CHECKPOINT
 
 
 class Evaluator(nn.Module):
@@ -61,25 +64,41 @@ def main(opt):
     model = hydra.utils.instantiate(opt.model, datamodule=datamodule, _recursive_=False)
     state_dict = model.state_dict()
 
-    checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
+    checkpoint = sorted(glob.glob("checkpoints/fit/*.ckpt"))[-1]
     for k, v in torch.load(checkpoint)["state_dict"].items():
-        if not k.startswith("SMPL_param"):
+        if not (k.startswith("SMPL_param") or k.startswith("hmr2_model") or k.startswith("loss_fn")):
             state_dict[k] = v
     model.load_state_dict(state_dict)
+
+    download_models(CACHE_DIR_4DHUMANS)
+    hmr2_model, hmr2_model_cfg = load_hmr2(DEFAULT_CHECKPOINT)
+    hmr2_state_dict = hmr2_model.state_dict()
+
+    for k, v in torch.load(checkpoint)["state_dict"].items():
+        if (k.startswith("hmr2_model.")):
+            hmr2_state_dict[k.replace("hmr2_model.", "")] = v
+    hmr2_model.load_state_dict(hmr2_state_dict)
+
+    del hmr2_model.discriminator
+    del hmr2_model.keypoint_3d_loss
+    del hmr2_model.keypoint_2d_loss
+    del hmr2_model.smpl_parameter_loss
 
     # freeze all the parameters other than SMPL pose
     for k, param in model.named_parameters():
         if not k.startswith("SMPL_param"):
             param.requires_grad = False
 
-    trainer = pl.Trainer(gpus=1,
-                         accelerator="gpu",
-                         callbacks=[checkpoint_callback],
-                         num_sanity_val_steps=0,  # disable sanity check
-                         weights_summary=None,
-                         logger=False,
-                         enable_progress_bar=False,
-                         **opt.train)
+    trainer = pl.Trainer(
+        gpus=1,
+        accelerator="gpu",
+        callbacks=[checkpoint_callback],
+        num_sanity_val_steps=0,  # disable sanity check
+        enable_model_summary=False,
+        logger=False,
+        enable_progress_bar=False,
+        **opt.train
+    )
 
     checkpoints = sorted(glob.glob("checkpoints/refinement/*.ckpt"))
     if len(checkpoints) > 0 and opt.resume:

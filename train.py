@@ -7,10 +7,12 @@ import hydra
 from omegaconf import OmegaConf
 
 
-@hydra.main(config_path="./confs", config_name="SNARF_NGP")
+@hydra.main(version_base='1.1', config_path="./confs", config_name="SNARF_NGP")
 def main(opt):
     pl.seed_everything(opt.seed)
     torch.set_printoptions(precision=6)
+    torch.set_float32_matmul_precision('medium')
+    torch.set_float32_matmul_precision('high')
     print(f"Switch to {os.getcwd()}")
 
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
@@ -23,17 +25,20 @@ def main(opt):
     lr_monitor = pl.callbacks.LearningRateMonitor()
 
     pl_logger = TensorBoardLogger("tensorboard", name="default", version=0)
-
+    
     datamodule = hydra.utils.instantiate(opt.dataset, _recursive_=False)
     model = hydra.utils.instantiate(opt.model, datamodule=datamodule, _recursive_=False)
-    trainer = pl.Trainer(gpus=1,
-                         accelerator="gpu",
-                         callbacks=[checkpoint_callback, lr_monitor],
-                         num_sanity_val_steps=0,  # disable sanity check
-                         logger=pl_logger,
-                        #  gradient_clip_val=0.1,
-                        #  profiler=pl_profiler,
-                         **opt.train)
+    
+    trainer = pl.Trainer(
+        gpus=1,
+        accelerator="gpu",
+        callbacks=[checkpoint_callback, lr_monitor],
+        num_sanity_val_steps=0,
+        logger=pl_logger,
+        #gradient_clip_val=0.1,
+        #profiler=pl_profiler,
+        **opt.train
+    )
 
     checkpoints = sorted(glob.glob("checkpoints/*.ckpt"))
     if len(checkpoints) > 0 and opt.resume:

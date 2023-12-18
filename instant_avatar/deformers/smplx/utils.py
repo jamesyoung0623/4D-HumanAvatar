@@ -99,6 +99,5 @@ def rot_mat_to_euler(rot_mats):
     # Calculates rotation matrix to euler angles
     # Careful for extreme cases of eular angles like [0.0, pi, 0.0]
 
-    sy = torch.sqrt(rot_mats[:, 0, 0] * rot_mats[:, 0, 0] +
-                    rot_mats[:, 1, 0] * rot_mats[:, 1, 0])
+    sy = torch.sqrt(rot_mats[:, 0, 0] * rot_mats[:, 0, 0] + rot_mats[:, 1, 0] * rot_mats[:, 1, 0])
     return torch.atan2(-rot_mats[:, 2, 0], sy)

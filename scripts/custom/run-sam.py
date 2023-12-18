@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import glob
 import os
+import json
 
 
 CHECKPOINT = os.path.expanduser("~/third_party/segment-anything/ckpts/sam_vit_h_4b8939.pth")
@@ -20,18 +21,22 @@ if __name__ == "__main__":
     predictor = SamPredictor(sam)
 
     root = args.data_dir
-    img_lists = sorted(glob.glob(f"{root}/images/*.png"))
-    keypoints = np.load(f"{root}/keypoints.npy")
+    img_path_list = sorted(glob.glob(f"{root}/images/*"))
+    keypoints_path_list = sorted(glob.glob(f"{root}/keypoints/*"))
+
     os.makedirs(f"{root}/masks_sam", exist_ok=True)
     os.makedirs(f"{root}/masks_sam_images", exist_ok=True)
-    for fn, pts in zip(img_lists, keypoints):
-        img = cv2.imread(fn)
-        predictor.set_image(img)
-        m = pts[..., -1] > 0.5
-        pts = pts[m]
-        masks, _, _ = predictor.predict(pts[:, :2], np.ones_like(pts[:, 0]))
-        mask = masks.sum(axis=0) > 0
-        cv2.imwrite(fn.replace("images", "masks_sam"), mask * 255)
+    for image_path, keypoints_path in zip(img_path_list, keypoints_path_list):
+        image = cv2.imread(image_path)
+        predictor.set_image(image)
 
-        img[~mask] = 0
-        cv2.imwrite(fn.replace("images", "masked_sam_images"), img)
+        keypoints = json.load(open(keypoints_path))
+        for i in range(len(keypoints)):
+            pts = np.array(keypoints[i]['keypoints'])
+            masks, _, _ = predictor.predict(pts, np.ones_like(pts[:, 0]))
+            mask = masks.sum(axis=0) > 0
+            cv2.imwrite(image_path.replace("images", "masks_sam"), mask * 255)
+
+            image[~mask] = 0
+            cv2.imwrite(image_path.replace("images", "masked_sam_images"), image)
+            break

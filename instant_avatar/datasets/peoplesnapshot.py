@@ -26,6 +26,9 @@ def make_rays(K, c2w, H, W):
 
 def load_smpl_param(path):
     smpl_params = dict(np.load(str(path)))
+    smpl_params_gt = dict(np.load('/home/jamesyoung0623/InstantAvatar/data/PeopleSnapshot/male-3-casual/poses_gt.npz'))
+    smpl_params["transl"] = smpl_params_gt["transl"][:689]
+
     if "thetas" in smpl_params:
         smpl_params["body_pose"] = smpl_params["thetas"][..., 3:]
         smpl_params["global_orient"] = smpl_params["thetas"][..., :3]
@@ -44,6 +47,8 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
         height = camera["height"]
         width = camera["width"]
 
+        self.boxes = np.load(str(root / "boxes.npy"))
+
         self.downscale = opt.downscale
         if self.downscale > 1:
             height = int(height / self.downscale)
@@ -57,7 +62,7 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
         end = opt.end + 1
         skip = opt.get("skip", 1)
         self.img_lists = sorted(glob.glob(f"{root}/images/*.png"))[start:end:skip]
-        self.msk_lists = sorted(glob.glob(f"{root}/masks/*.npy"))[start:end:skip]
+        self.msk_lists = sorted(glob.glob(f"{root}/masks/*.png"))[start:end:skip]
 
         refine = opt.get("refine", False)
         if refine: # fix model and optimize SMPL
@@ -89,16 +94,17 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             self.sampler = hydra.utils.instantiate(opt.sampler)
 
     def get_SMPL_params(self):
-        return {
-            k: torch.from_numpy(v.copy()) for k, v in self.smpl_params.items()
-        }
+        return {k: torch.from_numpy(v.copy()) for k, v in self.smpl_params.items()}
 
     def __len__(self):
         return len(self.img_lists)
 
     def __getitem__(self, idx):
-        img = cv2.imread(self.img_lists[idx])
-        msk = np.load(self.msk_lists[idx])
+        img_cv2 = cv2.imread(self.img_lists[idx])
+        img = img_cv2.copy()
+        #msk = np.load(self.msk_lists[idx])
+        msk = cv2.imread(self.msk_lists[idx], cv2.IMREAD_GRAYSCALE)/255
+        
         if self.downscale > 1:
             img = cv2.resize(img, dsize=None, fx=1/self.downscale, fy=1/self.downscale)
             msk = cv2.resize(msk, dsize=None, fx=1/self.downscale, fy=1/self.downscale)
@@ -114,8 +120,7 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             img = img * msk[..., None] + (1 - msk[..., None])
             
         if self.split == "train":
-            (msk, img, rays_o, rays_d, bg_color) = \
-                    self.sampler.sample(msk, img, self.rays_o, self.rays_d, bg_color) 
+            (msk, img, rays_o, rays_d, bg_color) = self.sampler.sample(msk, img, self.rays_o, self.rays_d, bg_color) 
         else:
             rays_o = self.rays_o.reshape(-1, 3)
             rays_d = self.rays_d.reshape(-1, 3)
@@ -134,11 +139,16 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             "body_pose": self.smpl_params["body_pose"][idx],
             "transl": self.smpl_params["transl"][idx],
 
+            # hmr2
+            "img_cv2": img_cv2,
+            "bbox": self.boxes[idx],
+
             # auxiliary
             "alpha": msk,
             "bg_color": bg_color,
             "idx": idx,
         }
+
         if self.near is not None and self.far is not None:
             datum["near"] = np.ones_like(rays_d[..., 0]) * self.near
             datum["far"] = np.ones_like(rays_d[..., 0]) * self.far
@@ -148,6 +158,7 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             dist = np.sqrt(np.square(self.smpl_params["transl"][idx]).sum(-1))
             datum["near"] = np.ones_like(rays_d[..., 0]) * (dist - 1)
             datum["far"] = np.ones_like(rays_d[..., 0]) * (dist + 1)
+            
         return datum
 
 

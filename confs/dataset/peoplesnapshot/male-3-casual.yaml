@@ -10,7 +10,7 @@ opt:
     batch_size: 1
     start: 0
     end: 455
-    skip: 4
+    skip: 1
     downscale: 2
     sampler: ${sampler}
     fitting: ${model.opt.optimize_SMPL.enable}
@@ -19,7 +19,7 @@ opt:
     num_workers: 8
     batch_size: 1
     start: 456
-    end: 456
+    end: 675
     skip: 4
     downscale: 2
   test:

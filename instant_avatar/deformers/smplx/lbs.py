@@ -74,33 +74,24 @@ def find_dynamic_lmk_idx_and_bcoords(
     batch_size = vertices.shape[0]
 
     if pose2rot:
-        aa_pose = torch.index_select(pose.view(batch_size, -1, 3), 1,
-                                     neck_kin_chain)
-        rot_mats = batch_rodrigues(
-            aa_pose.view(-1, 3)).view(batch_size, -1, 3, 3)
+        aa_pose = torch.index_select(pose.view(batch_size, -1, 3), 1, neck_kin_chain)
+        rot_mats = batch_rodrigues(aa_pose.view(-1, 3)).view(batch_size, -1, 3, 3)
     else:
-        rot_mats = torch.index_select(
-            pose.view(batch_size, -1, 3, 3), 1, neck_kin_chain)
+        rot_mats = torch.index_select(pose.view(batch_size, -1, 3, 3), 1, neck_kin_chain)
 
-    rel_rot_mat = torch.eye(
-        3, device=vertices.device, dtype=dtype).unsqueeze_(dim=0).repeat(
-            batch_size, 1, 1)
+    rel_rot_mat = torch.eye(3, device=vertices.device, dtype=dtype).unsqueeze_(dim=0).repeat(batch_size, 1, 1)
+    
     for idx in range(len(neck_kin_chain)):
         rel_rot_mat = torch.bmm(rot_mats[:, idx], rel_rot_mat)
 
-    y_rot_angle = torch.round(
-        torch.clamp(-rot_mat_to_euler(rel_rot_mat) * 180.0 / np.pi,
-                    max=39)).to(dtype=torch.long)
+    y_rot_angle = torch.round(torch.clamp(-rot_mat_to_euler(rel_rot_mat) * 180.0 / np.pi, max=39)).to(dtype=torch.long)
     neg_mask = y_rot_angle.lt(0).to(dtype=torch.long)
     mask = y_rot_angle.lt(-39).to(dtype=torch.long)
     neg_vals = mask * 78 + (1 - mask) * (39 - y_rot_angle)
-    y_rot_angle = (neg_mask * neg_vals +
-                   (1 - neg_mask) * y_rot_angle)
+    y_rot_angle = (neg_mask * neg_vals + (1 - neg_mask) * y_rot_angle)
 
-    dyn_lmk_faces_idx = torch.index_select(dynamic_lmk_faces_idx,
-                                           0, y_rot_angle)
-    dyn_lmk_b_coords = torch.index_select(dynamic_lmk_b_coords,
-                                          0, y_rot_angle)
+    dyn_lmk_faces_idx = torch.index_select(dynamic_lmk_faces_idx, 0, y_rot_angle)
+    dyn_lmk_b_coords = torch.index_select(dynamic_lmk_b_coords, 0, y_rot_angle)
 
     return dyn_lmk_faces_idx, dyn_lmk_b_coords
 
@@ -139,11 +130,9 @@ def vertices2landmarks(
     lmk_faces = torch.index_select(faces, 0, lmk_faces_idx.view(-1)).view(
         batch_size, -1, 3)
 
-    lmk_faces += torch.arange(
-        batch_size, dtype=torch.long, device=device).view(-1, 1, 1) * num_verts
+    lmk_faces += torch.arange(batch_size, dtype=torch.long, device=device).view(-1, 1, 1) * num_verts
 
-    lmk_vertices = vertices.view(-1, 3)[lmk_faces].view(
-        batch_size, -1, 3, 3)
+    lmk_vertices = vertices.view(-1, 3)[lmk_faces].view(batch_size, -1, 3, 3)
 
     landmarks = torch.einsum('blfi,blf->bli', [lmk_vertices, lmk_bary_coords])
     return landmarks
@@ -161,32 +150,36 @@ def lbs(
     pose2rot: bool = True,
 ) -> Tuple[Tensor, Tensor]:
     ''' Performs Linear Blend Skinning with the given shape and pose parameters
-
+        B = 1
+        NB = 10
+        J = 23
+        V = 6890
+        P = 207
         Parameters
         ----------
-        betas : torch.tensor BxNB
+        betas : torch.tensor B x NB
             The tensor of shape parameters
-        pose : torch.tensor Bx(J + 1) * 3
+        pose : torch.tensor B x (J+1)*3
             The pose parameters in axis-angle format
-        v_template torch.tensor BxVx3
+        v_template torch.tensor V x 3
             The template mesh that will be deformed
-        shapedirs : torch.tensor 1xNB
+        shapedirs : torch.tensor V x 3 x NB
             The tensor of PCA shape displacements
-        posedirs : torch.tensor Px(V * 3)
+        posedirs : torch.tensor P x (V*3)
             The pose PCA coefficients
-        J_regressor : torch.tensor JxV
+        J_regressor : torch.tensor (J+1) x V
             The regressor array that is used to calculate the joints from
             the position of the vertices
-        parents: torch.tensor J
+        parents: torch.tensor J+1
             The array that describes the kinematic tree for the model
-        lbs_weights: torch.tensor N x V x (J + 1)
+        lbs_weights: torch.tensor V x (J+1)
             The linear blend skinning weights that represent how much the
             rotation matrix of each part affects each vertex
         pose2rot: bool, optional
             Flag on whether to convert the input pose tensor to rotation
             matrices. The default value is True. If False, then the pose tensor
             should already contain rotation matrices and have a size of
-            Bx(J + 1)x9
+            B x J x 9
         dtype: torch.dtype, optional
 
         Returns
@@ -197,37 +190,38 @@ def lbs(
         joints: torch.tensor BxJx3
             The joints of the model
     '''
-
     batch_size = max(betas.shape[0], pose.shape[0])
     device, dtype = betas.device, betas.dtype
 
-    # Add shape contribution
+    # 1. Add shape contribution
     shape_offsets = blend_shapes(betas, shapedirs)
+    # B x V x 3
     v_shaped = v_template + shape_offsets
-
-    # Get the joints
-    # NxJx3 array
+  
+    # 2. Get the joints
+    # B x J x 3
     J = vertices2joints(J_regressor, v_shaped)
 
     # 3. Add pose blend shapes
-    # N x J x 3 x 3
+    # B x V x 3
     ident = torch.eye(3, dtype=dtype, device=device)
     if pose2rot:
-        rot_mats = batch_rodrigues(pose.view(-1, 3)).view(
-            [batch_size, -1, 3, 3])
+        # B x NB x 3 x 3
+        rot_mats = batch_rodrigues(pose.view(-1, 3)).view([batch_size, -1, 3, 3])
 
+        # B x 207
         pose_feature = (rot_mats[:, 1:, :, :] - ident).view([batch_size, -1])
-        # (N x P) x (P, V * 3) -> N x V x 3
-        pose_offsets = torch.matmul(
-            pose_feature, posedirs).view(batch_size, -1, 3)
+        # (B x P) x (P, V * 3) -> B x V x 3
+        pose_offsets = torch.matmul(pose_feature, posedirs).view(batch_size, -1, 3)
     else:
         pose_feature = pose[:, 1:].view(batch_size, -1, 3, 3) - ident
         rot_mats = pose.view(batch_size, -1, 3, 3)
-
-        pose_offsets = torch.matmul(pose_feature.view(batch_size, -1),
-                                    posedirs).view(batch_size, -1, 3)
+        
+        # (B x P) x (P, V * 3) -> B x V x 3
+        pose_offsets = torch.matmul(pose_feature.view(batch_size, -1), posedirs).view(batch_size, -1, 3)
 
     v_posed = pose_offsets + v_shaped
+    
     # 4. Get the global joint location
     J_transformed, A = batch_rigid_transform(rot_mats, J, parents, dtype=dtype)
 
@@ -238,8 +232,7 @@ def lbs(
     num_joints = J_regressor.shape[0]
     T = torch.matmul(W, A.view(batch_size, num_joints, 16)).view(batch_size, -1, 4, 4)
 
-    homogen_coord = torch.ones([batch_size, v_posed.shape[1], 1],
-                               dtype=dtype, device=device)
+    homogen_coord = torch.ones([batch_size, v_posed.shape[1], 1], dtype=dtype, device=device)
     v_posed_homo = torch.cat([v_posed, homogen_coord], dim=2)
     v_homo = torch.matmul(T, torch.unsqueeze(v_posed_homo, dim=-1))
 
@@ -299,7 +292,7 @@ def batch_rodrigues(
     ''' Calculates the rotation matrices for a batch of rotation vectors
         Parameters
         ----------
-        rot_vecs: torch.tensor Nx3
+        rot_vecs: torch.tensor N x 3
             array of N axis-angle vectors
         Returns
         -------
@@ -321,8 +314,7 @@ def batch_rodrigues(
     K = torch.zeros((batch_size, 3, 3), dtype=dtype, device=device)
 
     zeros = torch.zeros((batch_size, 1), dtype=dtype, device=device)
-    K = torch.cat([zeros, -rz, ry, rz, zeros, -rx, -ry, rx, zeros], dim=1) \
-        .view((batch_size, 3, 3))
+    K = torch.cat([zeros, -rz, ry, rz, zeros, -rx, -ry, rx, zeros], dim=1).view((batch_size, 3, 3))
 
     ident = torch.eye(3, dtype=dtype, device=device).unsqueeze(dim=0)
     rot_mat = ident + sin * K + (1 - cos) * torch.bmm(K, K)

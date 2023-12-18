@@ -1,0 +1,31 @@
+_target_: instant_avatar.datasets.penn_action.PADataModule
+name: penn_action
+subject: '0003'
+gender: male
+opt:
+  dataroot: ./data/Penn_Action/${dataset.subject}/
+  subject: ${dataset.subject}
+  train:
+    num_workers: 8
+    batch_size: 1
+    start: 0
+    end: 84
+    skip: 1
+    downscale: 2
+    sampler: ${sampler}
+    fitting: ${model.opt.optimize_SMPL.enable}
+    refine: ${model.opt.optimize_SMPL.is_refine}
+  val:
+    num_workers: 8
+    batch_size: 1
+    start: 0
+    end: 1
+    skip: 1
+    downscale: 2
+  test:
+    num_workers: 8
+    batch_size: 1
+    start: 0
+    end: 1
+    skip: 1
+    downscale: 2

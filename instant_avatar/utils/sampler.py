@@ -3,11 +3,7 @@ import cv2
 
 
 class EdgeSampler:
-    def __init__(self,
-                 num_sample,
-                 ratio_mask=0.6,
-                 ratio_edge=0.3,
-                 kernel_size=32):
+    def __init__(self, num_sample, ratio_mask=0.6, ratio_edge=0.3, kernel_size=32):
 
         assert ratio_mask >= 0.0
         assert ratio_edge >= 0.0
@@ -70,13 +66,16 @@ class PatchSampler():
         else:
             x = np.random.randint(0, shape[0] - patch[0], size=self.n)
             y = np.random.randint(0, shape[1] - patch[1], size=self.n)
+        
         output = []
         for d in [mask, *args]:
             patches = []
             for xi, yi in zip(x, y):
                 p = d[xi:xi + patch[0], yi:yi + patch[1]]
                 patches.append(p)
+
             patches = np.stack(patches, axis=0)
+            
             if patches.shape[-1] == 1: patches = patches.squeeze(-1)
             output.append(patches)
         return output

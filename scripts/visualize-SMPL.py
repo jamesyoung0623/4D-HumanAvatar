@@ -77,24 +77,28 @@ def make_draw_func(keypoints=None, msk_paths=None, threshold=0.2):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path", type=str, required=True)
+    parser.add_argument("--path", type=str, default="data/PeopleSnapshot/male-3-casual/")
     parser.add_argument("--gender", type=str, default="male")
     parser.add_argument("--pose", type=str, default=None)
     parser.add_argument("--openpose_threshold", type=float, default=0.2)
-    parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--headless", default=True, action="store_true")
     parser.add_argument("--fps", type=int, default=30)
     args = parser.parse_args()
 
     camera = dict(np.load(f"{args.path}/cameras.npz"))
     img_paths = sorted(glob.glob(f"{args.path}/images/*"))
-    msk_paths = sorted(glob.glob(f"{args.path}/masks/*.npy"))
-    if len(msk_paths) == 0:
-        msk_paths = sorted(glob.glob(f"{args.path}/masks/*.png"))
-    keypoints = np.load(f"{args.path}/keypoints.npy")
+    msk_paths = sorted(glob.glob(f"{args.path}/masks/*.png"))
+    
+    #keypoints = np.load(f"{args.path}/keypoints.npy")
+    keypoints = None
+    
     if args.pose and os.path.exists(args.pose):
         smpl_params = load_smpl_param(args.pose)
     else:
-        smpl_params = load_smpl_param(f"{args.path}/poses.npz")
+        smpl_params = load_smpl_param(os.path.join(args.path, 'poses.npz'))
+        smpl_params_gt = load_smpl_param(os.path.join(args.path, 'poses_gt.npz'))
+
+    smpl_params["transl"] = smpl_params_gt["transl"][:689]
 
     if args.headless:
         viewer = HeadlessRenderer()
@@ -104,6 +108,7 @@ if __name__ == "__main__":
     # load camera
     intrinsic = camera["intrinsic"]
     extrinsic = camera["extrinsic"]
+
     extrinsic[1:] *= -1
     H = camera["height"]
     W = camera["width"]
@@ -112,20 +117,21 @@ if __name__ == "__main__":
 
     # load images
     draw_func = make_draw_func(keypoints, msk_paths, threshold=args.openpose_threshold)
-    pc = Billboard.from_camera_and_distance(cam, 8.0, W, H, img_paths,
-                                            image_process_fn=draw_func)
+    pc = Billboard.from_camera_and_distance(cam, 8.0, W, H, img_paths, image_process_fn=draw_func)
     viewer.scene.add(pc)
 
     # load poses
-    smpl_layer = SMPLLayer(model_type='smpl',
-                           gender=args.gender,
-                           device=C.device)
-    smpl_seq = SMPLSequence(poses_body=smpl_params["body_pose"],
-                            smpl_layer=smpl_layer,
-                            poses_root=smpl_params["global_orient"],
-                            betas=smpl_params["betas"],
-                            trans=smpl_params["transl"],
-                            rotation=aa2rot_numpy(np.array([1, 0, 0]) * np.pi))
+    smpl_layer = SMPLLayer(model_type='smpl', gender=args.gender, device=C.device)
+
+    smpl_seq = SMPLSequence(
+        poses_body=smpl_params["body_pose"],
+        smpl_layer=smpl_layer,
+        poses_root=smpl_params["global_orient"],
+        betas=np.mean(smpl_params["betas"], axis=0),
+        trans=smpl_params["transl"],
+        rotation=aa2rot_numpy(np.array([1, 0, 0]) * np.pi)
+    )
+    
     viewer.scene.add(smpl_seq)
 
     # viewr settings

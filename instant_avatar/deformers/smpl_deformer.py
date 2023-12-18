@@ -59,10 +59,12 @@ class SMPLDeformer():
             # TODO: we have to intialized it every time because betas might change
             # self.initialized = True
 
-        smpl_outputs = self.body_model(betas=smpl_params["betas"],
-                                       body_pose=smpl_params["body_pose"],
-                                       global_orient=smpl_params["global_orient"],
-                                       transl=smpl_params["transl"])
+        smpl_outputs = self.body_model(
+            betas=smpl_params["betas"], 
+            body_pose=smpl_params["body_pose"], 
+            global_orient=smpl_params["global_orient"], 
+            transl=smpl_params["transl"]
+        )
 
         # remove & reapply the blendshape
         s2w = smpl_outputs.A[:, 0]

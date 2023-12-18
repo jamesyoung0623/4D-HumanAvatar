@@ -5,13 +5,7 @@ import torch
 
 
 @torch.no_grad()
-def marching_cubes(func,
-                   bbox,
-                   resolution=256,
-                   level_set=0,
-                   gradient_direction="ascent",
-                   extract_max_component=True,
-                   device="cuda"):
+def marching_cubes(func, bbox, resolution=256, level_set=0, gradient_direction="ascent", extract_max_component=True, device="cuda"):
 
     idx = torch.arange(0, resolution)
     coords = torch.meshgrid((idx, idx, idx), indexing="ij")
@@ -26,8 +20,7 @@ def marching_cubes(func,
     val = val.reshape(resolution, resolution, resolution)
     val = val.cpu().numpy()
 
-    verts, faces, _, _ = measure.marching_cubes(
-        val, level_set, gradient_direction=gradient_direction)
+    verts, faces, _, _ = measure.marching_cubes(val, level_set, gradient_direction=gradient_direction)
 
     bbox = bbox.cpu().numpy()
     verts = verts / resolution * (bbox[1] - bbox[0]) + bbox[0]

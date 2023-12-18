@@ -1,5 +1,5 @@
 defaults:
-  - dataset: peoplesnapshot/male-3-casual
+  - dataset: zju/387
   - deformer: fast_snarf
   - network: ngp
   - renderer: raymarcher_acc
@@ -19,6 +19,10 @@ model:
     optimize_SMPL:
       enable: false 
       is_refine: false
+    optimize_HMR2:
+      enable: true
+      is_refine: false
+      lr: 1e-5
     loss:
       _target_: instant_avatar.utils.loss.NeRFLoss
       opt:
@@ -34,7 +38,7 @@ model:
 
 project: "SNARF_NGP"
 experiment: "baseline"
-seed: 42
+seed: 99
 resume: true
 train:
   precision: 32

@@ -35,7 +35,7 @@ model:
 
 project: "SNARF_NGP"
 experiment: "baseline"
-seed: 42
+seed: 99
 resume: true
 train:
   precision: 32

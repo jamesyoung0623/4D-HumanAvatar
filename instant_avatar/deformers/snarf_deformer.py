@@ -1,7 +1,10 @@
 from .fast_snarf.deformer_torch import ForwardDeformer
 from .smplx import SMPL
+
 import torch
 import hydra
+import numpy as np
+import cv2
 
 def get_predefined_rest_pose(cano_pose, device="cuda"):
     body_pose_t = torch.zeros((1, 69), device=device)
@@ -35,6 +38,7 @@ class SNARFDeformer():
         model_path = hydra.utils.to_absolute_path(model_path)
         self.body_model = SMPL(model_path, gender=gender)
         self.deformer = ForwardDeformer(opt)
+
         self.initialized = False
         self.opt = opt
 
@@ -48,16 +52,20 @@ class SNARFDeformer():
             body_pose_t[:, 47] = self.opt.cano_pose[2]
             body_pose_t[:, 50] = self.opt.cano_pose[3]
 
-        smpl_outputs = self.body_model(betas=betas[:1], body_pose=body_pose_t)
+        self.body_pose_t = body_pose_t
+        smpl_outputs = self.body_model(betas=betas[:1], body_pose=self.body_pose_t)
+
         self.tfs_inv_t = torch.inverse(smpl_outputs.A.float().detach())
         self.vs_template = smpl_outputs.vertices
 
         # initialize SNARF
         self.deformer.device = device
-        self.deformer.switch_to_explicit(resolution=self.opt.resolution,
-                                         smpl_verts=smpl_outputs.vertices.float().detach(),
-                                         smpl_weights=self.body_model.lbs_weights.clone()[None].detach(),
-                                         use_smpl=True)
+        self.deformer.switch_to_explicit(
+            resolution=self.opt.resolution,
+            smpl_verts=smpl_outputs.vertices.float().detach(),
+            smpl_weights=self.body_model.lbs_weights.clone()[None].detach(),
+            use_smpl=True
+        )
         self.bbox = get_bbox_from_smpl(smpl_outputs.vertices.detach())
 
         self.dtype = torch.float32
@@ -76,10 +84,13 @@ class SNARFDeformer():
             self.initialize(smpl_params["betas"], smpl_params["betas"].device)
             self.initialized = True
 
-        smpl_outputs = self.body_model(betas=smpl_params["betas"],
-                                       body_pose=smpl_params["body_pose"],
-                                       global_orient=smpl_params["global_orient"],
-                                       transl=smpl_params["transl"])
+        smpl_outputs = self.body_model(
+            betas=smpl_params["betas"],
+            body_pose=smpl_params["body_pose"],
+            global_orient=smpl_params["global_orient"],
+            transl=smpl_params["transl"]
+        )
+        
         s2w = smpl_outputs.A[:, 0].float()
         w2s = torch.inverse(s2w)
 
@@ -142,7 +153,6 @@ class SNARFDeformer():
 
     def deform_train(self, pts, model):
         pts_cano_all, valid = self.deform(pts.type(self.dtype), eval_mode=False)
-
         rgb_cano = torch.zeros_like(pts_cano_all).float()
         sigma_cano = -torch.ones_like(pts_cano_all[..., 0]).float() * 1e5
 

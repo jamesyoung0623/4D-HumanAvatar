@@ -78,7 +78,7 @@ class AnimateDataset(torch.utils.data.Dataset):
         return datum
 
 
-@hydra.main(config_path="./confs", config_name="SNARF_NGP")
+@hydra.main(version_base='1.1', config_path="./confs", config_name="SNARF_NGP")
 def main(opt):
     pl.seed_everything(opt.seed)
     torch.set_printoptions(precision=6)
@@ -96,9 +96,7 @@ def main(opt):
 
     animation = "aist_demo"
     path = hydra.utils.to_absolute_path(f"./data/animation/{animation}.npz")
-    dataset = AnimateDataset(path,
-                             betas=datamodule.trainset.smpl_params["betas"],
-                             downscale=2)
+    dataset = AnimateDataset(path, betas=datamodule.trainset.smpl_params["betas"], downscale=2)
     datamodule.testset.image_shape = (dataset.H, dataset.W)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=8, pin_memory=True)
 

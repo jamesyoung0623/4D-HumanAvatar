@@ -17,7 +17,7 @@ model:
     deformer: ${deformer}
     renderer: ${renderer}
     optimize_SMPL:
-      enable: false 
+      enable: false
       is_refine: false
       lr: 1e-4
     loss:
@@ -38,7 +38,7 @@ model:
 
 project: "SNARF_NGP"
 experiment: "baseline"
-seed: 42
+seed: 99
 resume: true
 train:
   precision: 32

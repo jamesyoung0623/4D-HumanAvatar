@@ -10,10 +10,7 @@ handler = logging.FileHandler("nerf.log")
 logger.addHandler(handler)
 
 cuda_dir = os.path.join(os.path.dirname(__file__), "cuda")
-raymarch_kernel = load(name='raymarch_kernel',
-                       extra_cuda_cflags=[],
-                       sources=[f'{cuda_dir}/raymarcher.cpp',
-                                f'{cuda_dir}/raymarcher.cu'])
+raymarch_kernel = load(name='raymarch_kernel', extra_cuda_cflags=[], sources=[f'{cuda_dir}/raymarcher.cpp', f'{cuda_dir}/raymarcher.cu'])
 
 
 def stratified_sampling(N, step_size):
@@ -110,9 +107,7 @@ class Raymarcher(torch.nn.Module):
             if N_alive == 0: break
 
             N_step = max(min(self.MAX_BATCH_SIZE // N_alive, self.MAX_SAMPLES), 1)
-            pts, d_new, z_new = raymarch_kernel.raymarch_test(rays_o, rays_d, near, far, alive,
-                                                              density_grid.density_field, scale, offset,
-                                                              step_size, N_step)
+            pts, d_new, z_new = raymarch_kernel.raymarch_test(rays_o, rays_d, near, far, alive, density_grid.density_field, scale, offset, step_size, N_step)
             counter[alive] += (d_new > 0).sum(dim=-1)
             mask = d_new > 0
 
@@ -121,15 +116,16 @@ class Raymarcher(torch.nn.Module):
             if mask.any():
                 rgb_vals[mask], sigma_vals[mask] = model(pts[mask], None)
 
-            raymarch_kernel.composite_test(rgb_vals, sigma_vals, d_new, z_new, alive,
-                                           color, depth, no_hit, 0.01)
+            raymarch_kernel.composite_test(rgb_vals, sigma_vals, d_new, z_new, alive, color, depth, no_hit, 0.01)
             alive = alive[(no_hit[alive] > 1e-4) & (z_new[:, -1] > 0)]
             k += N_step
+
         if bg_color is not None:
             bg_color = bg_color.reshape(-1, 3)
             color = color + no_hit[..., None] * bg_color
         else:
             color = color + no_hit[..., None]
+        
         return {
             "rgb_coarse": color.reshape(rays.o.shape),
             "depth_coarse": depth.reshape(rays.near.shape),
@@ -150,9 +146,7 @@ class Raymarcher(torch.nn.Module):
         offset = density_grid.min_corner
         scale = density_grid.max_corner - density_grid.min_corner
 
-        z_vals = raymarch_kernel.raymarch_train(rays_o, rays_d, near, far,
-                                                density_grid.density_field, scale, offset,
-                                                step_size, N_step)
+        z_vals = raymarch_kernel.raymarch_train(rays_o, rays_d, near, far, density_grid.density_field, scale, offset, step_size, N_step)
         mask = z_vals > 0
 
         z_vals = z_vals + torch.rand_like(z_vals) * step_size[:, None]
@@ -171,6 +165,7 @@ class Raymarcher(torch.nn.Module):
         no_hit = transmittance[..., -1]
 
         color = (weights[..., None] * rgb_vals.reshape(pts.shape)).sum(dim=-2)
+
         if bg_color is not None:
             bg_color = bg_color.reshape(-1, 3)
             color = color + no_hit[..., None] * bg_color
@@ -178,6 +173,7 @@ class Raymarcher(torch.nn.Module):
             color = color + no_hit[..., None]
 
         depth = (weights * z_vals).sum(dim=-1)
+        
         return {
             "rgb_coarse": color.reshape(rays.o.shape),
             "depth_coarse": depth.reshape(rays.near.shape),

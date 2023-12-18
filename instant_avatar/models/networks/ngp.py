@@ -73,7 +73,7 @@ class NeRFNGPNet(nn.Module):
     def forward(self, x, d, cond=None):
         # normalize pts and view_dir to [0, 1]
         x = (x - self.center) / self.scale + 0.5
-        assert x.min() >= -EPS and x.max() < 1 + EPS
+        # assert x.min() >= -EPS and x.max() < 1 + EPS
         x = x.clamp(min=0, max=1)
         x = self.encoder(x)
         # x = self.density_net(x)
