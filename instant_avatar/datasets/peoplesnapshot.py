@@ -26,7 +26,7 @@ def make_rays(K, c2w, H, W):
 
 def load_smpl_param(path):
     smpl_params = dict(np.load(str(path)))
-    smpl_params_gt = dict(np.load('/home/jamesyoung0623/InstantAvatar/data/PeopleSnapshot/male-3-casual/poses_gt.npz'))
+    smpl_params_gt = dict(np.load('../../../../data/PeopleSnapshot/male-3-casual/poses_gt.npz'))
     smpl_params["transl"] = smpl_params_gt["transl"][:689]
 
     if "thetas" in smpl_params:
