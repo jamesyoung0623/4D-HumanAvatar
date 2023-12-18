@@ -67,6 +67,7 @@ class DNeRFModel(pl.LightningModule):
 
         self.datamodule = datamodule
         self.opt = opt
+        self.step = 0
 
         self.PSNR = PeakSignalNoiseRatio().cuda()
         self.SSIM = StructuralSimilarityIndexMeasure(data_range=1.0).cuda()
@@ -112,7 +113,7 @@ class DNeRFModel(pl.LightningModule):
         eval_mode = not self.training
         rays = Rays(o=batch['rays_o'], d=batch['rays_d'], near=batch['near'], far=batch['far'])
         self.deformer.transform_rays_w2s(rays)
-        use_noise = self.global_step < 1000 and not self.opt.optimize_SMPL.get('is_refine', False) and not eval_mode
+        use_noise = self.step < 1000 and not self.opt.optimize_SMPL.get('is_refine', False) and not eval_mode
         return self.renderer(rays, lambda x, _: self.deformer(x, self.net_coarse, eval_mode), eval_mode=eval_mode, noise=1 if use_noise else 0, bg_color=batch.get('bg_color', None))
 
     @torch.no_grad()
@@ -170,10 +171,10 @@ class DNeRFModel(pl.LightningModule):
 
     def update_density_grid(self):
         N = 1 if self.opt.get('smpl_init', False) else 20
-        if self.global_step % N == 0 and hasattr(self.renderer, 'density_grid_train'):
-            density, valid = self.renderer.density_grid_train.update(self.deformer, self.net_coarse, self.global_step)
+        if self.step % N == 0 and hasattr(self.renderer, 'density_grid_train'):
+            density, valid = self.renderer.density_grid_train.update(self.deformer, self.net_coarse, self.step)
             reg = N * density[~valid].mean()
-            if self.global_step < 500:
+            if self.step < 500:
                 reg += 0.5 * density.mean()
             return reg
         else:
@@ -242,6 +243,8 @@ class DNeRFModel(pl.LightningModule):
 
         for k, v in losses.items():
             self.log(f'train/{k}', v)
+
+        self.step += 1
 
         if self.automatic_optimization:
             return losses['loss']
@@ -336,7 +339,7 @@ class DNeRFModel(pl.LightningModule):
             rgb_cano = torch.cat([rgb_cano, rgb_new.squeeze()], dim=1)
 
         img = torch.cat([img, rgb_cano], dim=0)
-        cv2.imwrite(f'animation/progression/Step_{self.global_step:06d}_{batch_idx:03d}.png', img.cpu().numpy() * 255)
+        cv2.imwrite(f'animation/progression/Step_{self.step:06d}_{batch_idx:03d}.png', img.cpu().numpy() * 255)
 
         return losses
 
