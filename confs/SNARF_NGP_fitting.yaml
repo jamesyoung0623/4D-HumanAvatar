@@ -19,11 +19,9 @@ model:
     optimize_SMPL:
       enable: true
       is_refine: false
-      lr: 1e-4
+      lr: 5e-2
     optimize_HMR2:
-      enable: true
-      is_refine: false
-      lr: 1e-5
+      lr: 5e-2
     loss:
       _target_: instant_avatar.utils.loss.NGPLoss
       opt:
@@ -45,7 +43,7 @@ seed: 99
 resume: true
 train:
   precision: 32
-  max_epochs: 300
+  max_epochs: 30
   check_val_every_n_epoch: 10
 checkpoint:
   save_top_k: 1

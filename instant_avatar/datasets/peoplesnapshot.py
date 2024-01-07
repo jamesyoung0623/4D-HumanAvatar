@@ -26,8 +26,6 @@ def make_rays(K, c2w, H, W):
 
 def load_smpl_param(path):
     smpl_params = dict(np.load(str(path)))
-    smpl_params_gt = dict(np.load('../../../../data/PeopleSnapshot/male-3-casual/poses_gt.npz'))
-    smpl_params["transl"] = smpl_params_gt["transl"][:689]
 
     if "thetas" in smpl_params:
         smpl_params["body_pose"] = smpl_params["thetas"][..., 3:]
@@ -58,11 +56,12 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
         self.rays_o, self.rays_d = make_rays(K, c2w, height, width)
 
         # prepare image and mask
-        start = opt.start
-        end = opt.end + 1
+        self.start = opt.start
+        self.end = opt.end + 1
         skip = opt.get("skip", 1)
-        self.img_lists = sorted(glob.glob(f"{root}/images/*.png"))[start:end:skip]
-        self.msk_lists = sorted(glob.glob(f"{root}/masks/*.png"))[start:end:skip]
+        self.img_lists = sorted(glob.glob(f"{root}/images/*.png"))[self.start:self.end:skip]
+        self.msk_lists = sorted(glob.glob(f"{root}/masks/*.npy"))[self.start:self.end:skip]
+        self.boxes = self.boxes.tolist()[self.start:self.end:skip]
 
         refine = opt.get("refine", False)
         if refine: # fix model and optimize SMPL
@@ -83,7 +82,7 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             self.smpl_params = load_smpl_param(root / "poses.npz")
             for k, v in self.smpl_params.items():
                 if k != "betas":
-                    self.smpl_params[k] = v[start:end:skip]
+                    self.smpl_params[k] = v[self.start:self.end:skip]
 
         self.split = split
         self.downscale = opt.downscale
@@ -102,8 +101,7 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         img_cv2 = cv2.imread(self.img_lists[idx])
         img = img_cv2.copy()
-        #msk = np.load(self.msk_lists[idx])
-        msk = cv2.imread(self.msk_lists[idx], cv2.IMREAD_GRAYSCALE)/255
+        msk = np.load(self.msk_lists[idx])
         
         if self.downscale > 1:
             img = cv2.resize(img, dsize=None, fx=1/self.downscale, fy=1/self.downscale)
@@ -127,6 +125,23 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
             img = img.reshape(-1, 3)
             msk = msk.reshape(-1)
 
+        # if idx == 0:
+        #     global_orient = np.concatenate((self.smpl_params["global_orient"][0].reshape(1, -1), self.smpl_params["global_orient"][:2]), axis=0)
+        #     body_pose = np.concatenate((self.smpl_params["body_pose"][0].reshape(1, -1), self.smpl_params["body_pose"][:2]), axis=0)
+        #     transl = np.concatenate((self.smpl_params["transl"][0].reshape(1, -1), self.smpl_params["transl"][:2]), axis=0)
+        # elif idx == len(self.img_lists) - 1:
+        #     global_orient = np.concatenate((self.smpl_params["global_orient"][idx-1:], self.smpl_params["global_orient"][idx].reshape(1, -1)), axis=0)
+        #     body_pose = np.concatenate((self.smpl_params["body_pose"][idx-1:], self.smpl_params["body_pose"][idx].reshape(1, -1)), axis=0)
+        #     transl = np.concatenate((self.smpl_params["transl"][idx-1:], self.smpl_params["transl"][idx].reshape(1, -1)), axis=0)
+        # else:
+        #     global_orient = self.smpl_params["global_orient"][idx-1:idx+2]
+        #     body_pose = self.smpl_params["body_pose"][idx-1:idx+2]
+        #     transl = self.smpl_params["transl"][idx-1:idx+2]
+            
+        global_orient = self.smpl_params["global_orient"][idx]
+        body_pose = self.smpl_params["body_pose"][idx]
+        transl = self.smpl_params["transl"][idx]
+        
         datum = {
             # NeRF
             "rgb": img.astype(np.float32),
@@ -135,13 +150,13 @@ class PeopleSnapshotDataset(torch.utils.data.Dataset):
 
             # SMPL parameters
             "betas": self.smpl_params["betas"][0],
-            "global_orient": self.smpl_params["global_orient"][idx],
-            "body_pose": self.smpl_params["body_pose"][idx],
-            "transl": self.smpl_params["transl"][idx],
+            "global_orient": global_orient,
+            "body_pose": body_pose,
+            "transl": transl,
 
             # hmr2
             "img_cv2": img_cv2,
-            "bbox": self.boxes[idx],
+            "bbox": np.array(self.boxes[idx]),
 
             # auxiliary
             "alpha": msk,

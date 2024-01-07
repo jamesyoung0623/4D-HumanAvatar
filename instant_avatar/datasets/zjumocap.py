@@ -45,6 +45,8 @@ class ZJUDataset(torch.utils.data.Dataset):
         height = camera["height"]
         width = camera["width"]
 
+        self.boxes = np.load(str(root / "boxes.npy"))
+
         self.downscale = opt.downscale
         if self.downscale > 1:
             height = int(height / self.downscale)
@@ -54,11 +56,12 @@ class ZJUDataset(torch.utils.data.Dataset):
         self.rays_o, self.rays_d = make_rays(K, c2w, height, width)
 
         # prepare image and mask
-        start = opt.start
-        end = opt.end + 1
+        self.start = opt.start
+        self.end = opt.end + 1
         skip = opt.get("skip", 1)
-        self.img_lists = sorted(glob.glob(f"{root}/images/*.png"))[start:end:skip]
-        self.msk_lists = sorted(glob.glob(f"{root}/masks/*.npy"))[start:end:skip]
+        self.img_lists = sorted(glob.glob(f"{root}/images/*.png"))[self.start:self.end:skip]
+        self.msk_lists = sorted(glob.glob(f"{root}/masks/*.npy"))[self.start:self.end:skip]
+        self.boxes = self.boxes.tolist()[self.start:self.end:skip]
 
         refine = opt.get("refine", False)
         if refine: # fix model and optimize SMPL
@@ -79,7 +82,7 @@ class ZJUDataset(torch.utils.data.Dataset):
             self.smpl_params = load_smpl_param(root / "poses.npz")
             for k, v in self.smpl_params.items():
                 if k != "betas":
-                    self.smpl_params[k] = v[start:end:skip]
+                    self.smpl_params[k] = v[self.start:self.end:skip]
 
         self.split = split
         self.downscale = opt.downscale
@@ -88,7 +91,7 @@ class ZJUDataset(torch.utils.data.Dataset):
         self.image_shape = (height, width)
         if split == "train":
             self.sampler = hydra.utils.instantiate(opt.sampler)
-
+            
     def get_SMPL_params(self):
         return {k: torch.from_numpy(v.copy()) for k, v in self.smpl_params.items()}
 
@@ -96,8 +99,10 @@ class ZJUDataset(torch.utils.data.Dataset):
         return len(self.img_lists)
 
     def __getitem__(self, idx):
-        img = cv2.imread(self.img_lists[idx])
+        img_cv2 = cv2.imread(self.img_lists[idx])
+        img = img_cv2.copy()
         msk = np.load(self.msk_lists[idx])
+        
         if self.downscale > 1:
             img = cv2.resize(img, dsize=None, fx=1/self.downscale, fy=1/self.downscale)
             msk = cv2.resize(msk, dsize=None, fx=1/self.downscale, fy=1/self.downscale)
@@ -120,6 +125,23 @@ class ZJUDataset(torch.utils.data.Dataset):
             img = img.reshape(-1, 3)
             msk = msk.reshape(-1)
 
+        # if idx == 0:
+        #     global_orient = np.concatenate((self.smpl_params["global_orient"][0].reshape(1, -1), self.smpl_params["global_orient"][:2]), axis=0)
+        #     body_pose = np.concatenate((self.smpl_params["body_pose"][0].reshape(1, -1), self.smpl_params["body_pose"][:2]), axis=0)
+        #     transl = np.concatenate((self.smpl_params["transl"][0].reshape(1, -1), self.smpl_params["transl"][:2]), axis=0)
+        # elif idx == len(self.img_lists) - 1:
+        #     global_orient = np.concatenate((self.smpl_params["global_orient"][idx-1:], self.smpl_params["global_orient"][idx].reshape(1, -1)), axis=0)
+        #     body_pose = np.concatenate((self.smpl_params["body_pose"][idx-1:], self.smpl_params["body_pose"][idx].reshape(1, -1)), axis=0)
+        #     transl = np.concatenate((self.smpl_params["transl"][idx-1:], self.smpl_params["transl"][idx].reshape(1, -1)), axis=0)
+        # else:
+        #     global_orient = self.smpl_params["global_orient"][idx-1:idx+2]
+        #     body_pose = self.smpl_params["body_pose"][idx-1:idx+2]
+        #     transl = self.smpl_params["transl"][idx-1:idx+2]
+            
+        global_orient = self.smpl_params["global_orient"][idx]
+        body_pose = self.smpl_params["body_pose"][idx]
+        transl = self.smpl_params["transl"][idx]
+        
         datum = {
             # NeRF
             "rgb": img.astype(np.float32),
@@ -128,15 +150,20 @@ class ZJUDataset(torch.utils.data.Dataset):
 
             # SMPL parameters
             "betas": self.smpl_params["betas"][0],
-            "global_orient": self.smpl_params["global_orient"][idx],
-            "body_pose": self.smpl_params["body_pose"][idx],
-            "transl": self.smpl_params["transl"][idx],
+            "global_orient": global_orient,
+            "body_pose": body_pose,
+            "transl": transl,
+
+            # hmr2
+            "img_cv2": img_cv2,
+            "bbox": np.array(self.boxes[idx]),
 
             # auxiliary
             "alpha": msk,
             "bg_color": bg_color,
             "idx": idx,
         }
+
         if self.near is not None and self.far is not None:
             datum["near"] = np.ones_like(rays_d[..., 0]) * self.near
             datum["far"] = np.ones_like(rays_d[..., 0]) * self.far
@@ -146,6 +173,7 @@ class ZJUDataset(torch.utils.data.Dataset):
             dist = np.sqrt(np.square(self.smpl_params["transl"][idx]).sum(-1))
             datum["near"] = np.ones_like(rays_d[..., 0]) * (dist - 1)
             datum["far"] = np.ones_like(rays_d[..., 0]) * (dist + 1)
+            
         return datum
 
 

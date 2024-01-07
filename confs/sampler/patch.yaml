@@ -1,5 +1,5 @@
 _target_: instant_avatar.utils.sampler.PatchSampler
 num_patch: 4
-patch_size: 32
+patch_size: 64
 ratio_mask: 1
 dilate: 0

@@ -43,6 +43,8 @@ def main(opt):
     checkpoints = sorted(glob.glob("checkpoints/*.ckpt"))
     if len(checkpoints) > 0 and opt.resume:
         print("Resume from", checkpoints[-1])
+        print("Saving configs.")
+        OmegaConf.save(opt, "config.yaml")
         trainer.fit(model, ckpt_path=checkpoints[-1])
     else:
         print("Saving configs.")

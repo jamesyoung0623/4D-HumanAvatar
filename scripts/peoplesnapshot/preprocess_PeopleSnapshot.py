@@ -18,7 +18,7 @@ def load_h5py(fpath):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=str, required=True, help="path to the PeopleSnapshotData")
+    parser.add_argument("--root", type=str, default="../People_Snapshot/", help="path to the PeopleSnapshotData")
     parser.add_argument("--subject", type=str, default="male-3-casual", help="sequence to process")
     args = parser.parse_args()
 

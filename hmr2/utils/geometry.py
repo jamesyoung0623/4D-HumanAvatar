@@ -2,6 +2,7 @@ from typing import Optional
 import torch
 from torch.nn import functional as F
 
+
 def aa_to_rotmat(theta: torch.Tensor):
     """
     Convert axis-angle representation to rotation matrix.

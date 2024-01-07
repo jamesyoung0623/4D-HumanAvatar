@@ -1,31 +1,31 @@
-_target_: instant_avatar.datasets.zju.ZJUDataModule
-name: zju
-subject: 387
+_target_: instant_avatar.datasets.zjumocap.ZJUDataModule
+name: zjumocap
+subject: 377
 gender: male
 opt:
-  dataroot: ./data/ZJU/${dataset.subject}/
+  dataroot: ./data/ZJUMoCap/${dataset.subject}/
   subject: ${dataset.subject}
   train:
-    num_workers: 8
+    num_workers: 96
     batch_size: 1
     start: 0
-    end: 540
+    end: 539
     skip: 1
     downscale: 2
     sampler: ${sampler}
     fitting: ${model.opt.optimize_SMPL.enable}
     refine: ${model.opt.optimize_SMPL.is_refine}
   val:
-    num_workers: 8
+    num_workers: 96
     batch_size: 1
-    start: 539
-    end: 540
+    start: 0
+    end: 0
     skip: 1
     downscale: 2
   test:
-    num_workers: 8
+    num_workers: 96
     batch_size: 1
-    start: 539
-    end: 540
+    start: 0
+    end: 539
     skip: 1
     downscale: 2

@@ -64,6 +64,8 @@ class HMR2(pl.LightningModule):
         # Disable automatic optimization since we use adversarial training
         self.automatic_optimization = False
 
+        self.FOCAL_LENGTH = 2664
+
     def get_parameters(self):
         all_params = list(self.smpl_head.parameters())
         all_params += list(self.backbone.parameters())
@@ -77,12 +79,17 @@ class HMR2(pl.LightningModule):
         """
         param_groups = [{'params': filter(lambda p: p.requires_grad, self.get_parameters()), 'lr': self.cfg.TRAIN.LR}]
 
-        optimizer = torch.optim.AdamW(params=param_groups,
-                                        # lr=self.cfg.TRAIN.LR,
-                                        weight_decay=self.cfg.TRAIN.WEIGHT_DECAY)
-        optimizer_disc = torch.optim.AdamW(params=self.discriminator.parameters(),
-                                            lr=self.cfg.TRAIN.LR,
-                                            weight_decay=self.cfg.TRAIN.WEIGHT_DECAY)
+        optimizer = torch.optim.AdamW(
+            params=param_groups,
+            # lr=self.cfg.TRAIN.LR,
+            weight_decay=self.cfg.TRAIN.WEIGHT_DECAY
+        )
+
+        optimizer_disc = torch.optim.AdamW(
+            params=self.discriminator.parameters(),
+            lr=self.cfg.TRAIN.LR,
+            weight_decay=self.cfg.TRAIN.WEIGHT_DECAY
+        )
 
         return optimizer, optimizer_disc
 
@@ -104,7 +111,7 @@ class HMR2(pl.LightningModule):
         # if using ViT backbone, we need to use a different aspect ratio
         conditioning_feats = self.backbone(x[:,:,:,32:-32])
 
-        pred_smpl_params, pred_cam, _ = self.smpl_head(conditioning_feats)
+        pred_smpl_params, pred_cam, _ = self.smpl_head(conditioning_feats, batch)
 
         # Store useful regression outputs to the output dict
         output = {}
@@ -114,10 +121,13 @@ class HMR2(pl.LightningModule):
         # Compute camera translation
         device = pred_smpl_params['body_pose'].device
         dtype = pred_smpl_params['body_pose'].dtype
-        focal_length = self.cfg.EXTRA.FOCAL_LENGTH * torch.ones(batch_size, 2, device=device, dtype=dtype)
-        pred_cam_t = torch.stack([pred_cam[:, 1],
-                                  pred_cam[:, 2],
-                                  2*focal_length[:, 0]/(self.cfg.MODEL.IMAGE_SIZE * pred_cam[:, 0] +1e-9)],dim=-1)
+        focal_length = self.FOCAL_LENGTH * torch.ones(batch_size, 2, device=device, dtype=dtype)
+        pred_cam_t = torch.stack(
+            [pred_cam[:, 1],
+             pred_cam[:, 2],
+             2*focal_length[:, 0]/(self.cfg.MODEL.IMAGE_SIZE * pred_cam[:, 0] +1e-9)],
+             dim=-1
+        )
         output['pred_cam_t'] = pred_cam_t
         output['focal_length'] = focal_length
 
@@ -125,6 +135,7 @@ class HMR2(pl.LightningModule):
         pred_smpl_params['global_orient'] = pred_smpl_params['global_orient'].reshape(batch_size, -1, 3, 3)
         pred_smpl_params['body_pose'] = pred_smpl_params['body_pose'].reshape(batch_size, -1, 3, 3)
         pred_smpl_params['betas'] = pred_smpl_params['betas'].reshape(batch_size, -1)
+
         smpl_output = self.smpl(**{k: v.float() for k,v in pred_smpl_params.items()}, pose2rot=False)
         pred_keypoints_3d = smpl_output.joints
         pred_vertices = smpl_output.vertices
@@ -132,9 +143,12 @@ class HMR2(pl.LightningModule):
         output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
         pred_cam_t = pred_cam_t.reshape(-1, 3)
         focal_length = focal_length.reshape(-1, 2)
-        pred_keypoints_2d = perspective_projection(pred_keypoints_3d,
-                                                   translation=pred_cam_t,
-                                                   focal_length=focal_length / self.cfg.MODEL.IMAGE_SIZE)
+
+        pred_keypoints_2d = perspective_projection(
+            pred_keypoints_3d,
+            translation=pred_cam_t,
+            focal_length=focal_length / self.cfg.MODEL.IMAGE_SIZE
+        )
 
         output['pred_keypoints_2d'] = pred_keypoints_2d.reshape(batch_size, -1, 2)
         return output

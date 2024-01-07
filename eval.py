@@ -2,6 +2,7 @@ import glob
 import os
 import cv2
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import TensorBoardLogger
 import hydra
 from omegaconf import OmegaConf
 import torch
@@ -10,8 +11,7 @@ from torch.cuda.amp import custom_fwd
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
-from hmr2.configs import CACHE_DIR_4DHUMANS
-from hmr2.models import download_models, load_hmr2, DEFAULT_CHECKPOINT
+import loralib as lora
 
 
 class Evaluator(nn.Module):
@@ -40,63 +40,73 @@ class Evaluator(nn.Module):
 def main(opt):
     pl.seed_everything(opt.seed)
     torch.set_printoptions(precision=6)
+    torch.autograd.set_detect_anomaly(True)
     print(f"Switch to {os.getcwd()}")
 
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         dirpath=f"checkpoints/refinement/",
-        filename="epoch={epoch:04d}-val_psnr={val/psnr:.1f}",
+        filename="epoch={epoch:04d}",
         auto_insert_metric_name=False,
         **opt.checkpoint
     )
+    lr_monitor = pl.callbacks.LearningRateMonitor()
+
+    pl_logger = TensorBoardLogger("tensorboard", name="default", version=0)
 
     # refine test data
     opt.dataset.opt.train.start = opt.dataset.opt.test.start
     opt.dataset.opt.train.end = opt.dataset.opt.test.end
     opt.dataset.opt.train.skip = opt.dataset.opt.test.skip
 
-    opt.dataset.opt.val.start = opt.dataset.opt.test.start
-    opt.dataset.opt.val.end = opt.dataset.opt.test.end
-    opt.dataset.opt.val.skip = opt.dataset.opt.test.skip
+    # opt.dataset.opt.val.start = opt.dataset.opt.test.start
+    # opt.dataset.opt.val.end = opt.dataset.opt.test.end
+    # opt.dataset.opt.val.skip = opt.dataset.opt.test.skip
 
     datamodule = hydra.utils.instantiate(opt.dataset, _recursive_=False)
+    breakpoint()
 
     # load checkpoint
     model = hydra.utils.instantiate(opt.model, datamodule=datamodule, _recursive_=False)
     state_dict = model.state_dict()
 
-    checkpoint = sorted(glob.glob("checkpoints/fit/*.ckpt"))[-1]
+    checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
     for k, v in torch.load(checkpoint)["state_dict"].items():
-        if not (k.startswith("SMPL_param") or k.startswith("hmr2_model") or k.startswith("loss_fn")):
-            state_dict[k] = v
+        state_dict[k] = v
+
+        # if not (k.startswith("SMPL_param")):
+        # if not (k.startswith("SMPL_param") or 'hmr2' in k):
+        #     state_dict[k] = v
+
     model.load_state_dict(state_dict)
 
-    download_models(CACHE_DIR_4DHUMANS)
-    hmr2_model, hmr2_model_cfg = load_hmr2(DEFAULT_CHECKPOINT)
-    hmr2_state_dict = hmr2_model.state_dict()
+    # This sets requires_grad to False for all parameters without the string "lora_" in their names
+    lora.mark_only_lora_as_trainable(model)
 
-    for k, v in torch.load(checkpoint)["state_dict"].items():
-        if (k.startswith("hmr2_model.")):
-            hmr2_state_dict[k.replace("hmr2_model.", "")] = v
-    hmr2_model.load_state_dict(hmr2_state_dict)
-
-    del hmr2_model.discriminator
-    del hmr2_model.keypoint_3d_loss
-    del hmr2_model.keypoint_2d_loss
-    del hmr2_model.smpl_parameter_loss
-
-    # freeze all the parameters other than SMPL pose
     for k, param in model.named_parameters():
-        if not k.startswith("SMPL_param"):
-            param.requires_grad = False
+        # if k.startswith("SMPL_param"):
+        #     print(k)
+        #     param.requires_grad = True
+        if 'net_coarse' in k:
+            print(k)
+            param.requires_grad = True
+        # if 'transformer' in k:
+        #     print(k)
+        #     param.requires_grad = True
+        # if 'deccam' in k:
+        #     print(k)
+        #     param.requires_grad = False
+        # if 'decshape' in k:
+        #     print(k)
+        #     param.requires_grad = False
+
+    breakpoint()
 
     trainer = pl.Trainer(
         gpus=1,
         accelerator="gpu",
-        callbacks=[checkpoint_callback],
+        callbacks=[checkpoint_callback, lr_monitor],
         num_sanity_val_steps=0,  # disable sanity check
-        enable_model_summary=False,
-        logger=False,
-        enable_progress_bar=False,
+        logger=pl_logger,
         **opt.train
     )
 
@@ -122,6 +132,8 @@ def main(opt):
     W //= 3
     with torch.no_grad():
         results = [evaluator(img[None, :, W:2*W], img[None, :, :W]) for img in imgs]
+    
+    breakpoint()
     
     with open("results.txt", "w") as f:
         psnr = torch.stack([r['psnr'] for r in results]).mean().item()

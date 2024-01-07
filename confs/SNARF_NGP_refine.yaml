@@ -3,7 +3,7 @@ defaults:
   - deformer: fast_snarf
   - network: ngp
   - renderer: raymarcher_acc
-  - sampler: edge
+  - sampler: patch
   - _self_
 
 hydra:
@@ -19,13 +19,17 @@ model:
     optimize_SMPL:
       enable: true
       is_refine: true
-      lr: 1e-5
+      lr: 1e-05
+    optimize_HMR2:
+      lr: 1e-05
     loss:
       _target_: instant_avatar.utils.loss.NGPLoss
       opt:
         w_rgb: 1.0
         w_alpha: 0.1
         w_reg: 0.1
+        w_lpips: 0.0
+        w_depth_reg: 0.0
     optimizer:
       lr: 1e-2
       betas: [0.9, 0.99]

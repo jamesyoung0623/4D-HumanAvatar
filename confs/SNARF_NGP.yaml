@@ -1,5 +1,5 @@
 defaults:
-  - dataset: zju/387
+  - dataset: peoplesnapshot/male-3-casual
   - deformer: fast_snarf
   - network: ngp
   - renderer: raymarcher_acc
@@ -20,17 +20,17 @@ model:
       enable: false 
       is_refine: false
     optimize_HMR2:
-      enable: true
-      is_refine: false
-      lr: 1e-5
+      lr: 5e-2
     loss:
-      _target_: instant_avatar.utils.loss.NeRFLoss
+      _target_: instant_avatar.utils.loss.NGPLoss
       opt:
         w_rgb: 1.0
         w_alpha: 0.1
         w_reg: 0.1
+        w_lpips: 0.01
+        w_depth_reg: 0.01
     optimizer:
-      lr: 1e-2
+      lr: 0.01
       betas: [0.9, 0.99]
       eps: 1e-15
     scheduler:

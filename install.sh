@@ -3,7 +3,7 @@ pip install aitviewer
 pip install fvcore iopath
 pip install pytorch-lightning
 pip install opencv-python
-pip install imageio==2.4.1
+pip install imageio
 pip install smplx==0.1.28
 pip install hydra-core --upgrade
 pip install h5py ninja chumpy numpy

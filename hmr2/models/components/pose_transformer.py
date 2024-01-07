@@ -13,6 +13,8 @@ from .t_cond_mlp import (
 )
 # from .vit import Attention, FeedForward
 
+import loralib as lora
+
 
 def exists(val):
     return val is not None
@@ -41,10 +43,12 @@ class FeedForward(nn.Module):
     def __init__(self, dim, hidden_dim, dropout=0.0):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(dim, hidden_dim),
+            # nn.Linear(dim, hidden_dim),
+            lora.Linear(dim, hidden_dim, r=16),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, dim),
+            # nn.Linear(hidden_dim, dim),
+            lora.Linear(hidden_dim, dim, r=16),
             nn.Dropout(dropout),
         )
 
@@ -64,10 +68,12 @@ class Attention(nn.Module):
         self.attend = nn.Softmax(dim=-1)
         self.dropout = nn.Dropout(dropout)
 
-        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        # self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.to_qkv = lora.MergedLinear(dim, inner_dim * 3, r=8, enable_lora=[True, True, True])
 
         self.to_out = (
-            nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout))
+            # nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout))
+            nn.Sequential(lora.Linear(inner_dim, dim, r=8), nn.Dropout(dropout))
             if project_out
             else nn.Identity()
         )
@@ -99,11 +105,14 @@ class CrossAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         context_dim = default(context_dim, dim)
-        self.to_kv = nn.Linear(context_dim, inner_dim * 2, bias=False)
-        self.to_q = nn.Linear(dim, inner_dim, bias=False)
+        # self.to_kv = nn.Linear(context_dim, inner_dim * 2, bias=False)
+        self.to_kv = lora.MergedLinear(context_dim, inner_dim * 2, r=8, enable_lora=[True, True])
+        # self.to_q = nn.Linear(dim, inner_dim, bias=False)
+        self.to_q = lora.Linear(dim, inner_dim, r=8)
 
         self.to_out = (
-            nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout))
+            # nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout))
+            nn.Sequential(lora.Linear(inner_dim, dim, r=8), nn.Dropout(dropout))
             if project_out
             else nn.Identity()
         )
@@ -318,15 +327,20 @@ class TransformerDecoder(nn.Module):
     ):
         super().__init__()
         if not skip_token_embedding:
-            self.to_token_embedding = nn.Linear(token_dim, dim)
+            # self.to_token_embedding = nn.Linear(token_dim, dim)
+            self.to_token_embedding = lora.Linear(token_dim, dim, r=16)
         else:
             self.to_token_embedding = nn.Identity()
             if token_dim != dim:
                 raise ValueError(
                     f"token_dim ({token_dim}) != dim ({dim}) when skip_token_embedding is True"
                 )
+        
+        # self.new_token_embedding = lora.Linear(157, dim, r=16)
 
         self.pos_embedding = nn.Parameter(torch.randn(1, num_tokens, dim))
+        # self.pos_embedding = lora.Embedding(1, dim)
+        
         if emb_dropout_type == "drop":
             self.dropout = DropTokenDropout(emb_dropout)
         elif emb_dropout_type == "zero":
@@ -346,12 +360,15 @@ class TransformerDecoder(nn.Module):
             context_dim=context_dim,
         )
 
-    def forward(self, inp: torch.Tensor, *args, context=None, context_list=None):
-        x = self.to_token_embedding(inp)
+    def forward(self, inp: torch.Tensor, inp_old: torch.Tensor, *args, context=None, context_list=None):
+        x = self.to_token_embedding(inp_old)
+        # x += self.new_token_embedding(inp)
+
         b, n, _ = x.shape
 
         x = self.dropout(x)
         x += self.pos_embedding[:, :n]
+        # x += self.pos_embedding(torch.LongTensor([0.]).cuda())
 
         x = self.transformer(x, *args, context=context, context_list=context_list)
         return x

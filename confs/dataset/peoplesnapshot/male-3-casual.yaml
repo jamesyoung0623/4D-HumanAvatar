@@ -6,24 +6,24 @@ opt:
   dataroot: ./data/PeopleSnapshot/${dataset.subject}/
   subject: ${dataset.subject}
   train:
-    num_workers: 8
+    num_workers: 96
     batch_size: 1
     start: 0
     end: 455
-    skip: 1
+    skip: 4
     downscale: 2
     sampler: ${sampler}
     fitting: ${model.opt.optimize_SMPL.enable}
     refine: ${model.opt.optimize_SMPL.is_refine}
   val:
-    num_workers: 8
+    num_workers: 96
     batch_size: 1
     start: 456
-    end: 675
+    end: 456
     skip: 4
     downscale: 2
   test:
-    num_workers: 8
+    num_workers: 96
     batch_size: 1
     start: 456
     end: 675

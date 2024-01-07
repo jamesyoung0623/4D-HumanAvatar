@@ -7,6 +7,10 @@ import einops
 from ...utils.geometry import rot6d_to_rotmat, aa_to_rotmat
 from ..components.pose_transformer import TransformerDecoder
 
+from pytorch3d.transforms import axis_angle_to_matrix, matrix_to_rotation_6d
+
+import loralib as lora
+
 def build_smpl_head(cfg):
     smpl_head_type = cfg.MODEL.SMPL_HEAD.get('TYPE', 'hmr')
     if  smpl_head_type == 'transformer_decoder':
@@ -27,19 +31,28 @@ class SMPLTransformerDecoderHead(nn.Module):
         npose = self.joint_rep_dim * (cfg.SMPL.NUM_BODY_JOINTS + 1)
         self.npose = npose
         self.input_is_mean_shape = cfg.MODEL.SMPL_HEAD.get('TRANSFORMER_INPUT', 'zero') == 'mean_shape'
+
         transformer_args = dict(
             num_tokens=1,
             token_dim=(npose + 10 + 3) if self.input_is_mean_shape else 1,
             dim=1024,
         )
         transformer_args = (transformer_args | dict(cfg.MODEL.SMPL_HEAD.TRANSFORMER_DECODER))
+
         self.transformer = TransformerDecoder(
             **transformer_args
         )
+
         dim = transformer_args['dim']
-        self.decpose = nn.Linear(dim, npose)
-        self.decshape = nn.Linear(dim, 10)
-        self.deccam = nn.Linear(dim, 3)
+        # self.decpose = nn.Linear(dim, npose)
+        # self.decshape = nn.Linear(dim, 10)
+        # self.deccam = nn.Linear(dim, 3)
+
+        # ===== After ======
+        # Add a pair of low-rank adaptation matrices with rank r=16
+        self.decpose = lora.Linear(dim, npose, r=16)
+        self.decshape = lora.Linear(dim, 10, r=16)
+        self.deccam = lora.Linear(dim, 3, r=16)
 
         if cfg.MODEL.SMPL_HEAD.get('INIT_DECODER_XAVIER', False):
             # True by default in MLP. False by default in Transformer
@@ -56,8 +69,7 @@ class SMPLTransformerDecoderHead(nn.Module):
         self.register_buffer('init_cam', init_cam)
 
 
-    def forward(self, x, **kwargs):
-
+    def forward(self, x, batch):
         batch_size = x.shape[0]
         # vit pretrained backbone is channel-first. Change to token-first
         x = einops.rearrange(x, 'b c h w -> b (h w) c')
@@ -76,15 +88,21 @@ class SMPLTransformerDecoderHead(nn.Module):
         pred_body_pose_list = []
         pred_betas_list = []
         pred_cam_list = []
+
         for i in range(self.cfg.MODEL.SMPL_HEAD.get('IEF_ITERS', 1)):
             # Input token to transformer is zero token
             if self.input_is_mean_shape:
                 token = torch.cat([pred_body_pose, pred_betas, pred_cam], dim=1)[:,None,:]
             else:
-                token = torch.zeros(batch_size, 1, 1).to(x.device)
+                token_old = torch.zeros(batch_size, 1, 1).to(x.device)
+                gt_betas = batch['betas']
+                gt_body_pose = torch.cat([batch['global_orient'], batch['body_pose']], dim=1)
+                gt_body_pose = matrix_to_rotation_6d(axis_angle_to_matrix(gt_body_pose.reshape(24, 3))).reshape(1, -1)
+                gt_cam = batch['transl']
+                token = torch.cat([gt_betas, gt_body_pose, gt_cam], dim=1).unsqueeze(dim=0).to(x.device)
 
             # Pass through transformer
-            token_out = self.transformer(token, context=x)
+            token_out = self.transformer(token, token_old, context=x)
             token_out = token_out.squeeze(1) # (B, C)
 
             # Readout from token_out
@@ -107,7 +125,10 @@ class SMPLTransformerDecoderHead(nn.Module):
         pred_smpl_params_list['cam'] = torch.cat(pred_cam_list, dim=0)
         pred_body_pose = joint_conversion_fn(pred_body_pose).view(batch_size, self.cfg.SMPL.NUM_BODY_JOINTS+1, 3, 3)
 
-        pred_smpl_params = {'global_orient': pred_body_pose[:, [0]],
-                            'body_pose': pred_body_pose[:, 1:],
-                            'betas': pred_betas}
+        pred_smpl_params = {
+            'global_orient': pred_body_pose[:, [0]],
+            'body_pose': pred_body_pose[:, 1:],
+            'betas': pred_betas
+        }
+
         return pred_smpl_params, pred_cam, pred_smpl_params_list
